@@ -83,7 +83,7 @@ class Lexer:
 
                 else:
                     if lexema in OPERADORES_COMPUESTOS:
-                        tipo_norm = lexema
+                        tipo_norm = "OPERADOR"
                     else:
                         tipo_norm = lexema
 
@@ -93,6 +93,7 @@ class Lexer:
             msg, (renglon, columna) = e.args[0], e.args[1]
             self.manejador_errores.agregar_error("léxico", msg, renglon, columna)
 
+        # Asegurar que el archivo termine con un EOF
         if not self.tokens or self.tokens[-1].tipo != "EOF":
             self.tokens.append(Token("EOF", "", 0, 0))
 
