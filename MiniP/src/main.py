@@ -1,7 +1,11 @@
+import os
 from lexico import Lexer
 from sintactico import Sintactico
+from semantico import AnalizadorSemantico
 from manejador_de_errores import ManejadorDeErrores
+from tabla_simbolos import tabla_global
 from arbol_AST import NodoPrograma
+
 
 def imprimir_arbol(nodo, indent=0):
     """Imprime el árbol sintáctico de manera legible."""
@@ -20,19 +24,18 @@ def imprimir_arbol(nodo, indent=0):
             imprimir_arbol(hijo, indent + 1)
     elif hasattr(nodo, "__dict__"):
         print(f"{espacio}{tipo_nodo}: {nodo.__dict__}")
-    else:
+    else: 
         print(f"{espacio}{tipo_nodo}: {nodo}")
 
 def main():
     manejador_errores = ManejadorDeErrores()
 
-    # Cambia la ruta si tu archivo .yargc está en otro lugar
-    nombre_archivo = "C:/Users/kitca/Desktop/Automatas_2/MiniP/ejemplos/suma.yargc"
+    nombre_archivo = os.path.join(os.path.dirname(__file__), "../ejemplos/suma.yargc")
     try:
         with open(nombre_archivo, "r", encoding="utf-8") as f:
             codigo_fuente = f.read()
     except FileNotFoundError:
-        print(f"❌ No se encontró el archivo '{nombre_archivo}'")
+        print(f"No se encontró el archivo '{nombre_archivo}'")
         return
 
     # -------------------- LEXICO --------------------
@@ -46,6 +49,15 @@ def main():
     # ------------------ SINTACTICO --------------------
     parser = Sintactico(tokens, manejador_errores)
     arbol = parser.parsear()
+    
+    # ------------------ SEMÁNTICO ---------------------
+    print("\n=== ANÁLISIS SEMÁNTICO ===")
+    analizador = AnalizadorSemantico(manejador_errores)
+    analizador.analizar(arbol)
+
+    # ------------------ TABLA SIMBOLOS ----------------
+    print("\n=== TABLA DE SÍMBOLOS FINAL ===")
+    tabla_global.mostrar_tabla()
 
     # ------------------ ERRORES -------------------
     print("\n=== ERRORES DETECTADOS ===")

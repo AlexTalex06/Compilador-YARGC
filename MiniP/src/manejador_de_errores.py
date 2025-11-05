@@ -27,9 +27,9 @@ class ManejadorDeErrores:
     def imprimir_errores(self):
         """Muestra todos los errores almacenados."""
         if not self.errores:
-            print("✅ Sin errores detectados.")
+            print("Sin errores detectados.")
         else:
-            print("⚠️ Errores encontrados:")
+            print("Errores encontrados:")
             for e in self.errores:
                 print("  ", e)
 

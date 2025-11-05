@@ -1,57 +1,55 @@
 from arbol_AST import *
 from manejador_de_errores import ManejadorDeErrores
 from lexico import Token
+# !!! ELIMINADO: Ya no importa 'tabla_global'
 
 class Sintactico:
     def __init__(self, tokens, manejador_errores: ManejadorDeErrores):
         self.tokens = tokens
         self.pos = 0
         self.manejador_errores = manejador_errores
+        # !!! ELIMINADO: Ya no necesita acceso a 'tabla_simbolos'
 
+    # ---------------- utilidades ----------------
     def current_token(self):
         return self.tokens[self.pos] if self.pos < len(self.tokens) else Token("EOF", "", 0, 0)
 
     def advance(self):
         self.pos += 1
 
+    def lookahead(self, n):
+        if self.pos + n < len(self.tokens):
+            return self.tokens[self.pos + n]
+        return Token("EOF", "", 0, 0)
+
+    def _is(self, token, tipo=None, lexema=None):
+        if token is None:
+            return False
+        ok_tipo = True
+        if tipo is not None:
+            ok_tipo = (token.tipo == tipo) or (token.lexema == tipo)
+        ok_lex = True
+        if lexema is not None:
+            ok_lex = (token.lexema == lexema)
+        return ok_tipo and ok_lex
+
     def match(self, tipo=None, lexema=None):
         t = self.current_token()
-        if tipo is not None:
-            ok_tipo = (t.tipo == tipo) or (t.lexema == tipo)
-        else:
-            ok_tipo = True
-        ok_lex = (lexema is None) or (t.lexema == lexema)
-        if ok_tipo and ok_lex:
+        if self._is(t, tipo, lexema):
             self.advance()
             return t
         return None
 
     def expect(self, tipo=None, lexema=None):
-        """
-        Expect acepta:
-          - tipo: si token.tipo == tipo  OR token.lexema == tipo (por compatibilidad con tu lexer)
-          - lexema: compara token.lexema == lexema
-        Si no coincide, registra error y avanza para recuperación.
-        """
         token = self.current_token()
-
-        ok_tipo = True
-        if tipo is not None:
-            ok_tipo = (token.tipo == tipo) or (token.lexema == tipo)
-
-        ok_lex = True
-        if lexema is not None:
-            ok_lex = (token.lexema == lexema)
-
-        if ok_tipo and ok_lex:
+        if self._is(token, tipo, lexema):
             self.advance()
             return token
 
-        # Preparar texto esperado para mensaje claro
         esperado = []
-        if tipo is not None:
+        if tipo:
             esperado.append(f"tipo '{tipo}'")
-        if lexema is not None:
+        if lexema:
             esperado.append(f"lexema '{lexema}'")
         esperado_txt = " y ".join(esperado) if esperado else "token específico"
 
@@ -61,21 +59,13 @@ class Sintactico:
             token.renglon,
             token.columna
         )
-
-        # Avanzar para intentar recuperación
         self.advance()
         return token
 
-    def lookahead(self, n):
-        if self.pos + n < len(self.tokens):
-            return self.tokens[self.pos + n]
-        return Token("EOF", "", 0, 0)
-
-    # ------------------- Parser -------------------
+    # ---------------- parser principal ----------------
     def parsear(self):
         programa = NodoPrograma()
         while self.current_token().tipo != "EOF":
-            # saltar líneas en blanco sueltas
             if self.current_token().tipo == "NUEVA_LINEA":
                 self.advance()
                 continue
@@ -83,59 +73,54 @@ class Sintactico:
             if decl:
                 programa.declaraciones.append(decl)
             else:
-                # recuperación
                 self.advance()
         return programa
 
+    # ---------------- declaración ----------------
     def declaracion(self):
         tok = self.current_token()
 
         if tok.tipo == "COMENTARIO":
             self.advance()
             return NodoComentario(tok.valor)
-
-        if tok.lexema == "def" or (tok.tipo == "PALABRA_RESERVADA" and tok.lexema == "def"):
+        if tok.lexema == "def":
             return self.funcion()
-
         if tok.lexema == "si":
             return self.condicional()
         if tok.lexema == "mientras":
             return self.while_loop()
         if tok.lexema == "para":
             return self.for_loop()
-
         if tok.lexema == "retornar":
             return self.retornar()
 
-        # Identificador: asignación o llamada o expresión
         if tok.tipo in ("IDENTIFICADOR", "PALABRA_RESERVADA"):
             nxt = self.lookahead(1)
             if nxt.lexema == "=":
                 return self.asignacion()
             if nxt.lexema == "(":
                 return self.llamada_funcion()
-            # intentar expresión
             return self.expression()
 
-        # intentar expresión para otros casos
         return self.expression()
 
-    # ----------------- Funciones -----------------
+    # ---------------- función ----------------
     def funcion(self):
-        self.expect("PALABRA_RESERVADA", "def")
-
-        # nombre
+        self.expect(lexema="def")
         nombre_tok = self.current_token()
+        nombre = nombre_tok.lexema
         if nombre_tok.tipo in ("IDENTIFICADOR", "PALABRA_RESERVADA"):
-            nombre = nombre_tok.lexema
             self.advance()
         else:
-            nombre = nombre_tok.lexema
+            self.manejador_errores.agregar_error(
+                "sintáctico",
+                f"Nombre de función inválido: {nombre_tok.lexema}",
+                nombre_tok.renglon,
+                nombre_tok.columna
+            )
             self.advance()
 
-        # parámetros: aceptar '(' por tipo o lexema
-        self.expect("(", None)
-
+        self.expect(lexema="(")
         parametros = []
         while self.current_token().tipo != "EOF" and self.current_token().lexema != ")":
             if self.current_token().tipo == "IDENTIFICADOR":
@@ -143,33 +128,37 @@ class Sintactico:
                 self.advance()
                 if self.current_token().lexema == ",":
                     self.advance()
+                    continue
                 else:
                     break
             else:
-                # recuperación
+                bad = self.current_token()
                 self.manejador_errores.agregar_error(
                     "sintáctico",
-                    f"Parámetro inválido: {self.current_token().lexema}",
-                    self.current_token().renglon,
-                    self.current_token().columna
+                    f"Parámetro inválido: {bad.lexema}",
+                    bad.renglon,
+                    bad.columna
                 )
                 self.advance()
                 if self.current_token().lexema == ",":
                     self.advance()
 
-        self.expect(")", None)
-        self.expect(":", None)
-
-        # consumir newline opcional antes del INDENT
+        self.expect(lexema=")")
+        self.expect(lexema=":")
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
+        
+        # !!! ELIMINADO: 'entrar_ambito' y 'agregar_simbolo' para params
 
         cuerpo = self.bloque()
+
+        # !!! ELIMINADO: 'salir_ambito'
+        
         return NodoFuncion(nombre, parametros, cuerpo)
 
+    # ---------------- bloque ----------------
     def bloque(self):
         sentencias = []
-        # saltar NEWLINEs
         while self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
 
@@ -184,50 +173,51 @@ class Sintactico:
                     sentencias.append(s)
                 else:
                     self.advance()
-            # consumir DEDENT si existe
+            
             if self.current_token().tipo == "DEDENT":
                 self.advance()
             else:
-                tok = self.current_token()
+                t = self.current_token()
                 self.manejador_errores.agregar_error(
-                    "sintáctico",
-                    "Se esperaba DEDENT al terminar el bloque",
-                    tok.renglon,
-                    tok.columna
+                    "sintáctico", "Se esperaba DEDENT al terminar el bloque", t.renglon, t.columna
                 )
         else:
-            # bloque de una sola línea
             s = self.declaracion()
             if s:
                 sentencias.append(s)
 
         return NodoBloque(sentencias)
 
+    # ---------------- asignación ----------------
     def asignacion(self):
-        nombre = self.expect("IDENTIFICADOR").lexema
-        # aceptar '=' por lexema aunque el tipo sea OPERADOR
-        self.expect(None, "=")
+        nombre_tok = self.expect("IDENTIFICADOR")
+        if not nombre_tok: return None
+        
+        nombre = nombre_tok.lexema
+        self.expect(lexema="=")
         expr = self.expression()
-        # consumir NEWLINE opcional
+
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
-        return NodoAsignacion(nombre, expr)
+        
+        # Pasa el token al Nodo
+        return NodoAsignacion(nombre, expr, nombre_tok)
 
+    # ---------------- retornar ----------------
     def retornar(self):
-        self.expect("PALABRA_RESERVADA", "retornar")
+        self.expect(lexema="retornar")
         valor = self.expression()
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
         return NodoReturn(valor)
 
+    # ---------------- llamada a función ----------------
     def llamada_funcion(self):
-        # nombre puede ser IDENTIFICADOR o PALABRA_RESERVADA
         nombre_tok = self.current_token()
         nombre = nombre_tok.lexema
         self.advance()
 
-        # aceptar '('
-        self.expect(None, "(")
+        self.expect(lexema="(")
         args = []
         while self.current_token().tipo != "EOF" and self.current_token().lexema != ")":
             if self.current_token().tipo == "NUEVA_LINEA":
@@ -237,15 +227,17 @@ class Sintactico:
             args.append(arg)
             if self.current_token().lexema == ",":
                 self.advance()
+                continue
             else:
                 break
-        self.expect(None, ")")
-        # consume newline opcional
+        self.expect(lexema=")")
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
-        return NodoLlamadaFuncion(nombre, args)
+        
+        # Pasa (nombre, token, argumentos) en el orden correcto
+        return NodoLlamadaFuncion(nombre, nombre_tok, args)
 
-    # ---------------- Expresiones ----------------
+    # ---------------- expresiones (precedencia) ----------------
     def expression(self):
         while self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
@@ -311,19 +303,17 @@ class Sintactico:
             return NodoLiteral(val)
 
         if tok.tipo in ("IDENTIFICADOR", "PALABRA_RESERVADA"):
-            # llamada si sigue '('
             if self.lookahead(1).lexema == "(":
                 return self.llamada_funcion()
             self.advance()
-            return NodoIdentificador(tok.lexema)
+            return NodoIdentificador(tok.lexema, tok) # Pasa el token
 
         if tok.lexema == "(":
             self.advance()
             expr = self.expression()
-            self.expect(None, ")")
+            self.expect(lexema=")")
             return expr
 
-        # error
         self.manejador_errores.agregar_error(
             "sintáctico",
             f"Expresión no válida: {tok.lexema}",
@@ -333,40 +323,56 @@ class Sintactico:
         self.advance()
         return NodoLiteral(None)
 
-    # ---------------- Condicionales / bucles ----------------
+    # ---------------- condicionales y bucles ----------------
     def condicional(self):
-        self.expect("PALABRA_RESERVADA", "si")
+        self.expect(lexema="si")
         condicion = self.expression()
-        self.expect(None, ":")
+        self.expect(lexema=":")
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
+
+        # !!! ELIMINADO: 'entrar_ambito'
         cuerpo = self.bloque()
+        # !!! ELIMINADO: 'salir_ambito'
+        
         cuerpo_else = None
         if self.current_token().lexema == "sino":
             self.advance()
-            self.expect(None, ":")
+            self.expect(lexema=":")
             if self.current_token().tipo == "NUEVA_LINEA":
                 self.advance()
+            
+            # !!! ELIMINADO: 'entrar_ambito'
             cuerpo_else = self.bloque()
+            # !!! ELIMINADO: 'salir_ambito'
+            
         return NodoIf(condicion, cuerpo, cuerpo_else)
 
     def while_loop(self):
-        self.expect("PALABRA_RESERVADA", "mientras")
+        self.expect(lexema="mientras")
         condicion = self.expression()
-        self.expect(None, ":")
+        self.expect(lexema=":")
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
+
+        # !!! ELIMINADO: 'entrar_ambito'
         cuerpo = self.bloque()
+        # !!! ELIMINADO: 'salir_ambito'
+        
         return NodoWhile(condicion, cuerpo)
 
     def for_loop(self):
-        self.expect("PALABRA_RESERVADA", "para")
-        var = self.expect("IDENTIFICADOR").lexema
-        # 'en' puede venir como PALABRA_RESERVADA
-        self.expect("PALABRA_RESERVADA", "en")
+        self.expect(lexema="para")
+        var_tok = self.expect("IDENTIFICADOR")
+        var = var_tok.lexema
+        self.expect(lexema="en")
         iterable = self.expression()
-        self.expect(None, ":")
+        self.expect(lexema=":")
         if self.current_token().tipo == "NUEVA_LINEA":
             self.advance()
+
+        # !!! ELIMINADO: 'entrar_ambito' y 'agregar_simbolo'
         cuerpo = self.bloque()
-        return NodoFor(var, iterable, cuerpo)
+        # !!! ELIMINADO: 'salir_ambito'
+        
+        return NodoFor(var, iterable, cuerpo, var_tok)

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Any
+from lexico import Token 
 
 @dataclass
 class Nodo:
@@ -21,6 +22,7 @@ class NodoComentario(Nodo):
 class NodoAsignacion(Nodo):
     identificador: str
     expresion: Nodo
+    token: Token 
 
 @dataclass
 class NodoBinario(Nodo):
@@ -31,6 +33,7 @@ class NodoBinario(Nodo):
 @dataclass
 class NodoIdentificador(Nodo):
     nombre: str
+    token: Token 
 
 @dataclass
 class NodoLiteral(Nodo):
@@ -52,11 +55,12 @@ class NodoFor(Nodo):
     variable: str
     iterable: Nodo
     cuerpo: NodoBloque
+    token_variable: Token  
 
 @dataclass
 class NodoFuncion(Nodo):
     nombre: str
-    parametros: List[str]
+    parametros: List[str] # El parser solo pasa los nombres
     cuerpo: NodoBloque
 
 @dataclass
@@ -66,4 +70,5 @@ class NodoReturn(Nodo):
 @dataclass
 class NodoLlamadaFuncion(Nodo):
     nombre: str
+    token: Token 
     argumentos: List[Nodo] = field(default_factory=list)
